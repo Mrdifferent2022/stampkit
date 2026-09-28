@@ -1,0 +1,12 @@
+# Example custom rules. Load with: stampkit evaluate ... --rules rules_custom/
+# or programmatically via stampkit.rules.loader.load_yaml_dir().
+
+- id: hole_min_diameter
+  feature: hole
+  metric: diameter_mm
+  op: ">="
+  expr: "t"
+  tags: [example]
+  rulesets: [default, strict]
+  description: 孔径不小于板厚
+  fix: 孔径加大至 >= {required:.2f} mm（当前 {actual:.2f} mm）

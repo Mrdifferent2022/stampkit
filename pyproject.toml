@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stampkit"
+version = "0.1.0"
+description = "StampKit - rapid manufacturability evaluation for sheet metal parts"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "pydantic>=2",
+    "pyyaml>=6",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+rom = ["scikit-learn>=1.4"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML>=6",
+]
+
+[project.scripts]
+stampkit = "stampkit.cli.main:app"
+
+[project.entry-points."beaglar.freecad_plugins"]
+stampkit = "stampkit.beaglar_plugin.plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"stampkit.rules.library" = ["*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "freecad: requires a working FreeCAD/Part installation",
+    "bridge: end-to-end tests against a live FreeCAD MCP bridge",
+]
+addopts = "-m 'not freecad and not bridge'"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+strict = true
+exclude = "(stampkit/backends|stampkit/freecad_gui|tests)"
+
+[[tool.mypy.overrides]]
+module = "stampkit.backends.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "stampkit.freecad_gui.*"
+ignore_errors = true

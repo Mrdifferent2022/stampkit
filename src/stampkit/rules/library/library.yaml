@@ -1,0 +1,88 @@
+# StampKit builtin manufacturability rules.
+# t = sheet thickness (mm), R = bend radius (mm).
+
+- id: hole_hole_min_dist
+  feature: hole
+  scope: pairwise
+  other: hole
+  metric: edge_dist_mm
+  op: ">="
+  expr: "3*t"
+  description: 两孔边缘间距不小于 3 倍板厚
+  fix: 增大孔间距至 >= {required:.2f} mm（当前 {actual:.2f} mm），避免窄条冲裁畸变
+
+- id: hole_edge_min_dist
+  feature: hole
+  metric: min_dist_to_edge_mm
+  op: ">="
+  expr: "2*t"
+  description: 孔到板边距离不小于 2 倍板厚
+  fix: 将孔移离板边，距离 >= {required:.2f} mm（当前 {actual:.2f} mm）
+
+- id: slot_bend_min_dist
+  feature: slot
+  scope: pairwise
+  other: bend
+  metric: edge_dist_mm
+  op: ">="
+  expr: "4*t + R"
+  description: 槽到平行折弯的距离不小于 4 倍板厚加折弯半径
+  fix: 增大槽与折弯的间距至 >= {required:.2f} mm（当前 {actual:.2f} mm）
+
+- id: bend_edge_min_dist
+  feature: bend
+  metric: min_dist_to_edge_mm
+  op: ">="
+  expr: "4*t + R"
+  description: 折弯到板边距离不小于 4 倍板厚加折弯半径
+  fix: 将折弯移离板边，距离 >= {required:.2f} mm（当前 {actual:.2f} mm），防止畸变与模具滑料损伤
+
+- id: bend_min_radius
+  feature: bend
+  metric: radius_mm
+  op: ">="
+  expr: "t"
+  description: 折弯半径不小于板厚
+  fix: 折弯半径加大至 >= {required:.2f} mm（当前 {actual:.2f} mm），保证承载能力
+
+- id: notch_min_width
+  feature: notch
+  metric: width_mm
+  op: ">="
+  expr: "2*t"
+  description: 缺口宽度不小于 2 倍板厚
+  fix: 加宽缺口至 >= {required:.2f} mm（当前 {actual:.2f} mm），避免冲头/凹模窄弱截面
+
+- id: projection_min_width
+  feature: projection
+  metric: width_mm
+  op: ">="
+  expr: "2*t"
+  description: 凸台宽度不小于 2 倍板厚
+  fix: 加宽凸台至 >= {required:.2f} mm（当前 {actual:.2f} mm）
+
+- id: projection_projection_min_dist
+  feature: projection
+  scope: pairwise
+  other: projection
+  metric: edge_dist_mm
+  op: ">="
+  expr: "2*t"
+  description: 两凸台间距不小于 2 倍板厚
+  fix: 增大凸台间距至 >= {required:.2f} mm（当前 {actual:.2f} mm）
+
+- id: relief_cut_min_width
+  feature: relief_cut
+  metric: width_mm
+  op: ">="
+  expr: "2*t"
+  description: 止裂口宽度不小于 2 倍板厚
+  fix: 加宽止裂口至 >= {required:.2f} mm（当前 {actual:.2f} mm），防止撕裂
+
+- id: relief_cut_min_length
+  feature: relief_cut
+  metric: length_mm
+  op: ">="
+  expr: "t + R"
+  description: 止裂口长度不小于板厚加折弯半径
+  fix: 加长止裂口至 >= {required:.2f} mm（当前 {actual:.2f} mm），防止撕裂
