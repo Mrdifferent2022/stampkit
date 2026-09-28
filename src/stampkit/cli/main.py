@@ -24,8 +24,24 @@ def evaluate(
     rules_dir: str | None = typer.Option(None, "--rules", help="Directory with custom YAML rules"),
     fmt: str = typer.Option("md", "--format", help="json | md"),
 ) -> None:
-    """Evaluate a sheet metal part (requires a CAD kernel; Phase 1)."""
-    raise NotImplementedError("evaluation pipeline lands in Phase 1")
+    """Evaluate a sheet metal part (requires a CAD kernel)."""
+    from stampkit.api.dto import EvaluateRequest, LocalPathInput
+    from stampkit.api.service import StampKitService
+    from stampkit.report.json_io import to_json
+    from stampkit.report.render import render_markdown
+    from stampkit.rules.loader import load_yaml_dir
+    from stampkit.rules.registry import default_registry
+
+    if rules_dir:
+        load_yaml_dir(rules_dir, registry=default_registry)
+    request = EvaluateRequest(
+        part=LocalPathInput(path=step),
+        thickness_mm=thickness,
+        material=material,
+        ruleset=ruleset,
+    )
+    report = StampKitService().evaluate(request)
+    typer.echo(to_json(report) if fmt == "json" else render_markdown(report))
 
 
 @app.command()

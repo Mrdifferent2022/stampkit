@@ -4,9 +4,11 @@
 
 ## 它能做什么
 
-- 自动识别 9 类钣金特征：孔、槽、缺口、凸台、止裂口、折弯、拉深、压筋、翻边孔
+当前状态（Phase 1 完成）：孔、槽、折弯三类特征的端到端评估已可用并经过端到端验证。
+
+- 自动识别 9 类钣金特征：孔、槽、缺口、凸台、止裂口、折弯、拉深、压筋、翻边孔（Phase 1：孔/槽/折弯；其余 Phase 2）
 - 剪切类特征走**规则引擎**（内置工艺规则库，三种方式扩展：代码装饰器 / YAML 声明式 / entry-point 插件）
-- 拉深类特征走**混合降阶模型**（解析简化分析 + 机器学习分类 + 置信度融合）
+- 拉深类特征走**混合降阶模型**（解析简化分析 + 机器学习分类 + 置信度融合，Phase 4）
 - 每条结论给出实测值、要求值与修改建议，机器可读（JSON schema 版本化）
 
 ## 架构
@@ -36,10 +38,20 @@ scripts/install_beaglar_plugin.py
 
 ## 使用
 
+评估需要 CAD 内核（FreeCAD）。在装有 FreeCAD 的 Python 环境中（或先将 stampkit 装入 FreeCAD 自带 Python：`freecad/bin/python -m pip install -e .`）：
+
 ```bash
 stampkit evaluate part.step -t 2.5 -m steel --format md
 stampkit evaluate part.step -t 2.5 -m steel --rules rules_custom/   # 叠加自定义规则
 stampkit doctor                                                      # 检查 CAD 内核环境
+```
+
+端到端集成验证（自动重建金样件并断言特征计数与违规判定）：
+
+```bash
+freecadcmd scripts/run_integration.py
+# 或经 pytest（自动定位 freecadcmd，可用 STAMPKIT_FREECAD_CMD 指定）
+pytest -m freecad
 ```
 
 FreeCAD 内手工模式：安装 `addons/StampKitPanel`（见 `addons/README.md`），面板与 CLI/插件调用同一个 `stampkit.api.StampKitService`。

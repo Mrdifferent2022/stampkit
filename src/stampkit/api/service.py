@@ -2,17 +2,60 @@
 
 from __future__ import annotations
 
-from stampkit.api.dto import EvaluateRequest
+import hashlib
+from pathlib import Path
+
+from stampkit.api.dto import EvaluateRequest, LocalPathInput, PartInputKind
+from stampkit.engine.evaluator import EvaluatorRegistry
+from stampkit.engine.pipeline import evaluate as run_evaluation
+from stampkit.engine.rules_evaluator import RulesEvaluator
+from stampkit.extraction.kernel import GeometryKernel
+from stampkit.extraction.pipeline import ExtractionPipeline
+from stampkit.model.context import EvaluationContext
+from stampkit.model.extraction_result import ExtractionResult
+from stampkit.model.material import get_material
 from stampkit.report.schema import Report
 
 
 class StampKitService:
     """Facade: resolves the part input, runs extraction + evaluation.
 
-    In worker/headless processes this service owns a kernel directly; the
-    bridge plugin instead delegates geometry to a CAD instance pool and calls
-    only the evaluation half. Phase 1 wires the local path.
+    The kernel is injected lazily so importing this module never requires a
+    CAD kernel; only evaluate() does.
     """
 
+    def __init__(self, kernel: GeometryKernel | None = None) -> None:
+        self._kernel = kernel
+
+    def _get_kernel(self) -> GeometryKernel:
+        if self._kernel is None:
+            from stampkit.backends import get_kernel
+
+            self._kernel = get_kernel()
+        return self._kernel
+
     def evaluate(self, request: EvaluateRequest) -> Report:
-        raise NotImplementedError("lands in Phase 1")
+        ctx = EvaluationContext(
+            thickness_mm=request.thickness_mm,
+            material=get_material(request.material),
+            ruleset=request.ruleset,
+            kernel_settings=request.kernel_settings,
+        )
+        extraction = self._extract(request)
+        registry = EvaluatorRegistry()
+        registry.register(RulesEvaluator())
+        return run_evaluation(extraction, ctx, registry=registry)
+
+    def _extract(self, request: EvaluateRequest) -> ExtractionResult:
+        settings = request.kernel_settings
+        if request.part.kind is PartInputKind.LOCAL_PATH:
+            assert isinstance(request.part, LocalPathInput)
+            path = Path(request.part.path)
+            if not path.exists():
+                raise FileNotFoundError(f"part file not found: {path}")
+            source_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            pipeline = ExtractionPipeline(self._get_kernel(), settings)
+            return pipeline.run(str(path), request.thickness_mm, source_hash=source_hash)
+        raise NotImplementedError(
+            f"part input kind {request.part.kind!r} lands with the bridge/cloud work (Phase 3)"
+        )

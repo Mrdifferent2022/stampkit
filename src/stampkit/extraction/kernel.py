@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from stampkit.model.geometry import BBox, Point3, Polyline, Vector3
+from stampkit.model.geometry import BBox, PlaneFrame, Point3, Polyline, Vector3
 
 #: Opaque handle to a kernel-side shape (face, wire, curve, solid...).
 ShapeRef = Any
@@ -36,6 +36,29 @@ class GeometryKernel(Protocol):
 
     def wires(self, face: ShapeRef) -> tuple[ShapeRef, list[ShapeRef]]:
         """(outer wire, inner wires) of a planar face."""
+        ...
+
+    def plane_frame(self, face: ShapeRef) -> PlaneFrame:
+        """Local frame (origin + normal) of a planar face."""
+        ...
+
+    def cylinder_radius(self, face: ShapeRef) -> float | None:
+        """Radius if the face is cylindrical, else None."""
+        ...
+
+    def cylinder_axis(self, face: ShapeRef) -> tuple[Point3, Vector3] | None:
+        """(point on axis, axis direction) if cylindrical, else None."""
+        ...
+
+    def cylinder_axial_span(self, face: ShapeRef) -> float | None:
+        """Extent of a cylindrical face along its axis."""
+        ...
+
+    def has_closed_circle_edge(self, face: ShapeRef) -> bool:
+        """True if bounded by a full closed circle (through-hole wall)."""
+        ...
+
+    def edge_length(self, edge: ShapeRef) -> float:
         ...
 
     def sew(self, faces: list[ShapeRef]) -> list[ShapeRef]:
