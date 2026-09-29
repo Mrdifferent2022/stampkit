@@ -24,6 +24,20 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         failures.append(name)
 
 
+def _count_red_pixels(png_path: str) -> int:
+    """Count reddish pixels in a screenshot (lit red faces stay R-dominant)."""
+    from PySide import QtGui as _QtGui
+
+    img = _QtGui.QImage(png_path)
+    n = 0
+    for x in range(img.width()):
+        for y in range(img.height()):
+            c = img.pixelColor(x, y)
+            if c.red() > 150 and c.green() < 120 and c.blue() < 120:
+                n += 1
+    return n
+
+
 def main() -> None:
     import FreeCAD as App
     import FreeCADGui as Gui
@@ -73,9 +87,30 @@ def main() -> None:
     after = list(obj.ViewObject.DiffuseColor)
     check("faces highlighted", n > 0 and after != before, f"highlighted={n}")
 
+    # Visual check: the red faces must actually show up in the 3D view.
+    import tempfile
+
+    view = Gui.ActiveDocument.ActiveView
+    view.viewIsometric()
+    view.fitAll()
+    Gui.updateGui()
+    shot_red = os.path.join(tempfile.gettempdir(), "stampkit_smoke_red.png")
+    view.saveImage(shot_red, 480, 360, "Current")
+    red_px = _count_red_pixels(shot_red)
+    check("highlight visible in 3D view", red_px > 200, f"red_px={red_px}")
+
     highlight.clear_highlights(obj.ViewObject)
     restored = list(obj.ViewObject.DiffuseColor)
     check("colors restored", restored == before)
+    Gui.updateGui()
+    shot_clear = os.path.join(tempfile.gettempdir(), "stampkit_smoke_clear.png")
+    view.saveImage(shot_clear, 480, 360, "Current")
+    red_px_after = _count_red_pixels(shot_clear)
+    check(
+        "restore removes red from view",
+        red_px_after < max(50, red_px * 0.05),
+        f"red_px={red_px_after} (was {red_px})",
+    )
 
     App.closeDocument(doc.Name)
 

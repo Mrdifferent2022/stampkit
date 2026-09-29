@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import FreeCAD as App  # type: ignore[import-not-found]
 import FreeCADGui as Gui  # type: ignore[import-not-found]
-from PySide import QtCore, QtWidgets  # type: ignore[import-not-found]
+from PySide import QtCore, QtGui, QtWidgets  # type: ignore[import-not-found]
 
 from stampkit.api.service import StampKitService
 from stampkit.freecad_gui import highlight
@@ -83,8 +83,8 @@ class StampKitPanel(QtWidgets.QDialog):
         layout.addWidget(self.summary_label)
 
         self.results = QtWidgets.QTreeWidget()
-        self.results.setHeaderLabels(["Rule", "Feature", "Verdict", "Actual", "Required"])
-        self.results.setRootIsDecorated(False)
+        self.results.setHeaderLabels(["Item", "Detail", "Verdict", "Actual", "Required"])
+        self.results.setRootIsDecorated(True)
         self.results.setAlternatingRowColors(True)
         self.results.itemSelectionChanged.connect(self._on_result_selected)
         layout.addWidget(self.results)
@@ -129,12 +129,33 @@ class StampKitPanel(QtWidgets.QDialog):
             + (f" | warnings: {'; '.join(report.warnings)}" if report.warnings else "")
         )
 
+    @staticmethod
+    def _format_params(params: dict[str, float], limit: int = 3) -> str:
+        # skip pairwise distance entries (edge_dist_mm@<id>)
+        parts = [f"{k}={v:.2f}" for k, v in params.items() if "@" not in k]
+        shown = parts[:limit]
+        return ", ".join(shown) + (" …" if len(parts) > limit else "")
+
     def _fill_results(self, report: object) -> None:
         self.results.clear()
-        for finding in report.findings:
-            if finding.verdict == "accept":
-                continue
+
+        features_root = QtWidgets.QTreeWidgetItem(
+            [f"Features ({len(report.features)})", "", "", "", ""]
+        )
+        self.results.addTopLevelItem(features_root)
+        for feat in report.features:
             item = QtWidgets.QTreeWidgetItem(
+                features_root, [feat.id, f"{feat.kind}: {self._format_params(feat.params)}", "", "", ""]
+            )
+            item.setToolTip(1, self._format_params(feat.params, limit=99))
+
+        findings_root = QtWidgets.QTreeWidgetItem(
+            [f"Findings ({len(report.findings)})", "", "", "", ""]
+        )
+        self.results.addTopLevelItem(findings_root)
+        for finding in report.findings:
+            item = QtWidgets.QTreeWidgetItem(
+                findings_root,
                 [
                     finding.rule_id,
                     finding.feature_id,
@@ -145,15 +166,18 @@ class StampKitPanel(QtWidgets.QDialog):
             )
             item.setToolTip(0, finding.message)
             item.setData(0, QtCore.Qt.ItemDataRole.UserRole, finding.fix_suggestion)
-            self.results.addTopLevelItem(item)
+            if finding.verdict == "accept":
+                for col in range(5):
+                    item.setForeground(col, QtGui.QColor("#888888"))
+        findings_root.setExpanded(True)
+        features_root.setExpanded(True)
         for col in range(self.results.columnCount()):
             self.results.resizeColumnToContents(col)
 
     def _on_result_selected(self) -> None:
         items = self.results.selectedItems()
-        self.suggestion_label.setPlainText(
-            items[0].data(0, QtCore.Qt.ItemDataRole.UserRole) if items else ""
-        )
+        suggestion = items[0].data(0, QtCore.Qt.ItemDataRole.UserRole) if items else None
+        self.suggestion_label.setPlainText(suggestion or "")
 
     def _on_clear(self) -> None:
         doc = App.ActiveDocument

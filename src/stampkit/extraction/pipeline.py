@@ -48,11 +48,12 @@ class ExtractionPipeline:
 
         classified = thickness.classify_faces(kernel, all_faces, thickness_mm)
         sheet_reps = thickness.dedupe_sheet_faces(kernel, classified.sheet_faces, thickness_mm)
-        rep_faces = [(i, f) for i, f, _p in sheet_reps]
-        paired_faces = [(i, f) for i, f, p in sheet_reps if p]
+        rep_faces = [(i, f) for i, f, _ps in sheet_reps]
+        partners = {i: ps for i, _f, ps in sheet_reps if ps}
+        paired_faces = [(i, f) for i, f, ps in sheet_reps if ps]
         outline_faces = paired_faces or rep_faces
 
-        hits = planar.extract_planar_features(kernel, rep_faces)
+        hits = planar.extract_planar_features(kernel, rep_faces, partners)
         bends, leftover, warnings = nonplanar.extract_bends(
             kernel, classified.non_planar, thickness_mm, classified.sheet_faces
         )
@@ -61,7 +62,7 @@ class ExtractionPipeline:
         )
         warnings.extend(shell_warnings)
 
-        outline_hits = planar.extract_outline_features(kernel, outline_faces, settings)
+        outline_hits = planar.extract_outline_features(kernel, outline_faces, settings, partners)
         outline_features = [
             self._reclassify_relief_cut(feature, face_idx, mouth, face_by_idx, bends)
             for feature, face_idx, mouth in outline_hits

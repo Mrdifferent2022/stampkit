@@ -94,33 +94,33 @@ def dedupe_sheet_faces(
     thickness_mm: float,
     *,
     offset_tol: float = 0.3,
-) -> list[tuple[int, ShapeRef, bool]]:
+) -> list[tuple[int, ShapeRef, list[int]]]:
     """Collapse opposing pairs of sheet faces (top/bottom of the same wall).
 
     Without thickness removal, every punched feature appears as inner wires on
     BOTH sides of the wall. Two faces form a pair when their planes are
     parallel, offset by ~t, and their in-plane footprints overlap.
 
-    Returns (index, face, paired) triples: one representative per pair
-    (paired=True) and unpaired faces as-is (paired=False, e.g. profile
-    faces of extruded brackets).
+    Returns (index, face, partner_indices) triples: one representative per
+    pair plus the indices of the faces it absorbs (empty for unpaired faces,
+    e.g. profile faces of extruded brackets). The partner indices let
+    downstream steps reference BOTH sides of a punched wall (e.g. for
+    symmetric highlighting).
     """
     frames = [(idx, face, kernel.plane_frame(face)) for idx, face in sheet_faces]
     paired: set[int] = set()
-    partners: set[int] = set()
-    keep: list[tuple[int, ShapeRef, bool]] = []
+    keep: list[tuple[int, ShapeRef, list[int]]] = []
     for i, (idx_a, face_a, fa) in enumerate(frames):
         if idx_a in paired:
             continue
-        is_paired = False
+        partners: list[int] = []
         for idx_b, face_b, fb in frames[i + 1 :]:
             if idx_b in paired:
                 continue
             if _is_opposing_pair(kernel, face_a, fa, face_b, fb, thickness_mm, offset_tol):
                 paired.add(idx_b)
-                partners.add(idx_b)
-                is_paired = True
-        keep.append((idx_a, face_a, is_paired))
+                partners.append(idx_b)
+        keep.append((idx_a, face_a, partners))
     return keep
 
 

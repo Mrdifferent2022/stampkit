@@ -19,8 +19,17 @@ from stampkit.model.geometry import Point3
 PlanarHit = tuple[Feature, ShapeRef, int]
 
 
+def _face_refs(face_idx: int, partners: dict[int, list[int]] | None) -> tuple[str, ...]:
+    """Refs for the representative face plus the other side(s) of its wall."""
+    refs = [f"face:{face_idx}"]
+    refs += [f"face:{p}" for p in (partners or {}).get(face_idx, [])]
+    return tuple(refs)
+
+
 def extract_planar_features(
-    kernel: GeometryKernel, sheet_faces: list[tuple[int, ShapeRef]]
+    kernel: GeometryKernel,
+    sheet_faces: list[tuple[int, ShapeRef]],
+    partners: dict[int, list[int]] | None = None,
 ) -> list[PlanarHit]:
     hits: list[PlanarHit] = []
     counters: dict[FeatureKind, int] = {}
@@ -37,7 +46,7 @@ def extract_planar_features(
             feature = Feature(
                 id=f"{kind.value}{counters[kind]}",
                 kind=kind,
-                face_refs=(f"face:{face_idx}",),
+                face_refs=_face_refs(face_idx, partners),
                 params={"area_mm2": area},
             )
             hits.append((feature, wire, face_idx))
@@ -48,6 +57,7 @@ def extract_outline_features(
     kernel: GeometryKernel,
     sheet_faces: list[tuple[int, ShapeRef]],
     settings: KernelSettings,
+    partners: dict[int, list[int]] | None = None,
 ) -> list[tuple[Feature, int, Point3]]:
     """Detect notches/projections on sheet-face outlines.
 
@@ -75,7 +85,7 @@ def extract_outline_features(
             feature = Feature(
                 id=f"{kind.value}{counters[kind]}",
                 kind=kind,
-                face_refs=(f"face:{face_idx}",),
+                face_refs=_face_refs(face_idx, partners),
                 params={"width_mm": ch.width_mm, "depth_mm": ch.depth_mm},
             )
             o = frame.origin
