@@ -16,6 +16,12 @@ class KernelSettings:
     discretization_tol_mm: float = 0.01
     control_point_samples: int = 64
     min_dist_samples: int = 32
+    #: Max mouth width for outline channels (notches/projections).
+    channel_max_width_mm: float = 30.0
+    #: Max depth for outline channels; longer peninsulas are not features.
+    channel_max_depth_mm: float = 25.0
+    #: Mouth-to-bend proximity for relief-cut reclassification.
+    relief_cut_tol_mm: float = 2.0
 
 
 @dataclass(frozen=True, slots=True)

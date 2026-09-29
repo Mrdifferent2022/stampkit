@@ -61,6 +61,21 @@ class GeometryKernel(Protocol):
     def edge_length(self, edge: ShapeRef) -> float:
         ...
 
+    def shared_edges(self, a: ShapeRef, b: ShapeRef) -> list[ShapeRef]:
+        """Edges shared by two faces of the same solid."""
+        ...
+
+    def edge_endpoints(self, edge: ShapeRef) -> tuple[Point3, Point3]:
+        ...
+
+    def group_connected_faces(self, faces: list[ShapeRef]) -> list[list[int]]:
+        """Group face indices by edge-sharing connectivity (union-find)."""
+        ...
+
+    def boundary_loop_count(self, faces: list[ShapeRef]) -> int:
+        """Closed loops formed by edges used by exactly one face in the group."""
+        ...
+
     def sew(self, faces: list[ShapeRef]) -> list[ShapeRef]:
         """Sew faces into connected open shells; returns the shells."""
         ...

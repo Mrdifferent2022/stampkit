@@ -21,6 +21,7 @@ class FeatureRecord(BaseModel):
     id: str
     kind: str
     params: dict[str, float] = Field(default_factory=dict)
+    face_refs: list[str] = Field(default_factory=list)
 
 
 class FindingRecord(BaseModel):
@@ -78,7 +79,9 @@ def build_report(
         material=ctx.material.name,
         ruleset=ctx.ruleset,
         features=[
-            FeatureRecord(id=f.id, kind=f.kind.value, params=dict(f.params))
+            FeatureRecord(
+                id=f.id, kind=f.kind.value, params=dict(f.params), face_refs=list(f.face_refs)
+            )
             for f in extraction.features
         ],
         findings=[

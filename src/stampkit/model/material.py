@@ -29,6 +29,11 @@ _BUILTIN: dict[str, Material] = {
 }
 
 
+def list_materials() -> list[str]:
+    """Names of all builtin materials, sorted."""
+    return sorted(_BUILTIN)
+
+
 def get_material(name: str) -> Material:
     """Look up a builtin material by name (case-insensitive)."""
     key = name.strip().lower()

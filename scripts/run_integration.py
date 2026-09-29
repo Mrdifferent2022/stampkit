@@ -86,6 +86,66 @@ def main() -> int:
          f"actual={fixes[0].actual if fixes else None} required={fixes[0].required if fixes else None}")
     )
 
+    # Fixture A2: plate t=3 -> 2 holes, 1 notch (8x6), 1 projection (12x10), all Accept.
+    rep = evaluate("plate_a2.step", 3.0, "aluminum")
+    counts = {}
+    for f in rep.features:
+        counts[f.kind] = counts.get(f.kind, 0) + 1
+    notches = [f for f in rep.features if f.kind == "notch"]
+    tabs = [f for f in rep.features if f.kind == "projection"]
+    results.append(("plate_a2 holes", counts.get("hole") == 2, f"got {counts.get('hole')}"))
+    results.append(("plate_a2 notch", len(notches) == 1, f"got {len(notches)}"))
+    results.append(
+        ("plate_a2 notch width", notches and abs(notches[0].params["width_mm"] - 8.0) < 1.5,
+         f"w={notches[0].params.get('width_mm') if notches else None}")
+    )
+    results.append(("plate_a2 projection", len(tabs) == 1, f"got {len(tabs)}"))
+    results.append(
+        ("plate_a2 projection width", tabs and abs(tabs[0].params["width_mm"] - 12.0) < 1.5,
+         f"w={tabs[0].params.get('width_mm') if tabs else None}")
+    )
+    results.append(("plate_a2 all accept", rep.summary.to_fix == 0, f"to_fix={rep.summary.to_fix}"))
+
+    # Fixture C: bracket t=2.5 -> 1 bend, 1 relief-cut (6x8), 1 notch; all Accept.
+    rep = evaluate("bracket_c.step", 2.5, "steel")
+    counts = {}
+    for f in rep.features:
+        counts[f.kind] = counts.get(f.kind, 0) + 1
+    reliefs = [f for f in rep.features if f.kind == "relief_cut"]
+    results.append(("bracket_c bend", counts.get("bend") == 1, f"got {counts.get('bend')}"))
+    results.append(("bracket_c relief_cut", len(reliefs) == 1, f"got {len(reliefs)}"))
+    results.append(("bracket_c notch", counts.get("notch") == 1, f"got {counts.get('notch')}"))
+    results.append(
+        ("bracket_c relief dims",
+         reliefs
+         and abs(reliefs[0].params["width_mm"] - 6.0) < 1.5
+         and abs(reliefs[0].params["length_mm"] - 8.0) < 1.5,
+         f"{reliefs[0].params if reliefs else None}")
+    )
+    results.append(("bracket_c all accept", rep.summary.to_fix == 0, f"to_fix={rep.summary.to_fix}"))
+
+    # Fixture D: plate t=2 -> 1 emboss, 1 drawing, 1 extruded hole.
+    rep = evaluate("plate_d.step", 2.0, "steel")
+    counts = {}
+    for f in rep.features:
+        counts[f.kind] = counts.get(f.kind, 0) + 1
+    results.append(("plate_d emboss", counts.get("emboss") == 1, f"got {counts.get('emboss')}"))
+    results.append(("plate_d drawing", counts.get("drawing") == 1, f"got {counts.get('drawing')}"))
+    results.append(
+        ("plate_d extruded_hole", counts.get("extruded_hole") == 1,
+         f"got {counts.get('extruded_hole')}")
+    )
+
+    # In-memory shape path (FreeCAD panel path): same result as file path.
+    from stampkit.backends import get_kernel
+
+    kernel = get_kernel()
+    shape = kernel.import_step(os.path.join(fixtures, "bracket_b2.step"))
+    rep2 = service.evaluate_shape(shape, thickness_mm=2.5, material="steel")
+    results.append(
+        ("evaluate_shape parity", rep2.summary.to_fix == 1, f"to_fix={rep2.summary.to_fix}")
+    )
+
     failed = _failures(results)
     print(f"\n{len(results) - failed}/{len(results)} integration checks passed")
     return 1 if failed else 0

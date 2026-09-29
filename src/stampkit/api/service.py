@@ -46,6 +46,31 @@ class StampKitService:
         registry.register(RulesEvaluator())
         return run_evaluation(extraction, ctx, registry=registry)
 
+    def evaluate_shape(
+        self,
+        shape: object,
+        *,
+        thickness_mm: float,
+        material: str,
+        ruleset: str = "default",
+    ) -> Report:
+        """Evaluate an in-memory shape (e.g. a solid in the FreeCAD document).
+
+        The shape stays opaque: nothing kernel-specific is read here, it is
+        only forwarded to the extraction pipeline.
+        """
+        ctx = EvaluationContext(
+            thickness_mm=thickness_mm,
+            material=get_material(material),
+            ruleset=ruleset,
+        )
+        extraction = ExtractionPipeline(self._get_kernel(), ctx.kernel_settings).run_shape(
+            shape, thickness_mm
+        )
+        registry = EvaluatorRegistry()
+        registry.register(RulesEvaluator())
+        return run_evaluation(extraction, ctx, registry=registry)
+
     def _extract(self, request: EvaluateRequest) -> ExtractionResult:
         settings = request.kernel_settings
         if request.part.kind is PartInputKind.LOCAL_PATH:

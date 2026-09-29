@@ -1,9 +1,12 @@
 """Non-planar feature extraction.
 
-Phase 1: bends. A folded sheet produces two coaxial cylindrical faces per bend
-(inner radius R and outer radius R + t); coaxial pairs are merged into a
-single bend feature whose radius is the inner radius.
-Phase 2: sewing into open shells and classifying emboss/drawing/extruded-hole.
+- Bends: coaxial cylinder pairs (inner/outer walls of one fold), excluding
+  through-hole walls (closed circular boundary) and straight-through cut
+  walls (axial span ~= t).
+- Shell classification (Phase 2): remaining non-planar faces are grouped by
+  edge connectivity and classified as emboss (one plane, one boundary loop),
+  extruded hole (coaxial tube walls), or drawing (shell spans 2+ planes).
+  These are geometric heuristics to be validated against real parts.
 """
 
 from __future__ import annotations
@@ -41,32 +44,43 @@ def _coaxial(a1: tuple[Point3, Vector3], a2: tuple[Point3, Vector3]) -> bool:
 
 
 def extract_bends(
-    kernel: GeometryKernel, non_planar: list[tuple[int, ShapeRef]], thickness_mm: float
-) -> tuple[list[tuple[Feature, list[int]]], list[str]]:
+    kernel: GeometryKernel,
+    non_planar: list[tuple[int, ShapeRef]],
+    thickness_mm: float,
+    sheet_faces: list[tuple[int, ShapeRef]],
+) -> tuple[list[tuple[Feature, list[int]]], list[tuple[int, ShapeRef]], list[str]]:
     """Identify bends among non-planar faces.
 
-    Cylindrical faces are filtered first: through-hole walls (closed circular
-    boundary) and slot walls (axial span ~= t, i.e. straight-through cuts) are
-    not bends. Remaining cylinders are grouped by coaxial axes so the inner
-    and outer walls of one fold merge into a single bend (inner radius kept).
+    A bend cylinder must connect two sheet faces (its axial boundary edges are
+    shared with the large planar walls). Cylinders failing this (e.g. fillets
+    around a drawn pocket) are passed on to shell classification.
 
-    Returns (list of (bend feature, source face indices), warnings).
+    Returns (bends as (feature, face indices), leftover faces for shell
+    classification, warnings).
     """
     cylinders: list[tuple[int, ShapeRef, float, tuple[Point3, Vector3]]] = []
+    leftover: list[tuple[int, ShapeRef]] = []
     warnings: list[str] = []
     for face_idx, face in non_planar:
         radius = kernel.cylinder_radius(face)
         axis = kernel.cylinder_axis(face)
         if radius is None or axis is None:
-            warnings.append(
-                f"face:{face_idx}: non-planar, non-cylindrical face not classified (Phase 2)"
-            )
+            leftover.append((face_idx, face))
             continue
-        if kernel.has_closed_circle_edge(face):
-            continue  # through-hole wall
         span = kernel.cylinder_axial_span(face)
+        if kernel.has_closed_circle_edge(face):
+            if span is not None and abs(span - thickness_mm) <= 0.35 * thickness_mm:
+                continue  # through-hole wall
+            leftover.append((face_idx, face))  # tube wall (flanged hole, boss)
+            continue
         if span is not None and abs(span - thickness_mm) <= 0.35 * thickness_mm:
             continue  # straight-through cut wall (slot/oblong), not a fold
+        sheet_touches = sum(
+            1 for _si, sface in sheet_faces if kernel.shared_edges(face, sface)
+        )
+        if sheet_touches < 2:
+            leftover.append((face_idx, face))  # rim fillet etc., not a fold
+            continue
         cylinders.append((face_idx, face, radius, axis))
 
     # Group coaxial cylinders into bends (inner + outer wall of one fold).
@@ -94,4 +108,101 @@ def extract_bends(
                 face_indices,
             )
         )
+    return features, leftover, warnings
+
+
+def classify_shells(
+    kernel: GeometryKernel,
+    leftover: list[tuple[int, ShapeRef]],
+    planar_faces: list[tuple[int, ShapeRef]],
+) -> tuple[list[Feature], list[str]]:
+    """Classify leftover non-planar faces as emboss/extruded-hole/drawing.
+
+    Heuristics (to be validated on real parts):
+    - shells containing coaxial tube walls (closed-circle cylinders) merge
+      into a single extruded hole;
+    - a shell sharing edges with 2+ planar faces is a drawing;
+    - a shell sharing edges with exactly 1 planar face and bounded by one
+      boundary loop is an emboss.
+    """
+    features: list[Feature] = []
+    warnings: list[str] = []
+    if not leftover:
+        return features, warnings
+
+    faces = [f for _i, f in leftover]
+    groups = kernel.group_connected_faces(faces)
+    counters: dict[FeatureKind, int] = {}
+
+    def emit(kind: FeatureKind, face_indices: list[int], params: dict[str, float]) -> None:
+        counters[kind] = counters.get(kind, 0) + 1
+        features.append(
+            Feature(
+                id=f"{kind.value}{counters[kind]}",
+                kind=kind,
+                face_refs=tuple(f"face:{i}" for i in sorted(face_indices)),
+                params=params,
+            )
+        )
+
+    # Planar adjacency: how many distinct planar faces share an edge with the shell.
+    def planar_touch_count(group_faces: list[ShapeRef]) -> int:
+        count = 0
+        for _pi, pface in planar_faces:
+            for gface in group_faces:
+                if kernel.shared_edges(gface, pface):
+                    count += 1
+                    break
+        return count
+
+    def tube_axes(group_faces: list[ShapeRef]) -> list[tuple[Point3, Vector3]]:
+        axes = []
+        for gface in group_faces:
+            if kernel.has_closed_circle_edge(gface):
+                axis = kernel.cylinder_axis(gface)
+                if axis is not None:
+                    axes.append(axis)
+        return axes
+
+    extruded_groups: list[list[int]] = []
+    pending: list[tuple[list[int], list[ShapeRef]]] = []
+    for group in groups:
+        group_faces = [faces[i] for i in group]
+        if tube_axes(group_faces):
+            extruded_groups.append(group)
+        else:
+            pending.append((group, group_faces))
+
+    # Merge shells whose tube walls are coaxial (inner+outer of one collar).
+    merged: list[list[int]] = []
+    for group in extruded_groups:
+        axes = tube_axes([faces[i] for i in group])
+        for other in merged:
+            other_axes = tube_axes([faces[i] for i in other])
+            if any(_coaxial(a, b) for a in axes for b in other_axes):
+                other.extend(group)
+                break
+        else:
+            merged.append(list(group))
+
+    for group in merged:
+        idxs = [leftover[i][0] for i in group]
+        radii = [
+            kernel.cylinder_radius(faces[i]) or 0.0 for i in group
+        ]
+        emit(FeatureKind.EXTRUDED_HOLE, idxs, {"radius_mm": min(radii) if radii else 0.0})
+
+    for group, group_faces in pending:
+        idxs = [leftover[i][0] for i in group]
+        touches = planar_touch_count(group_faces)
+        loops = kernel.boundary_loop_count(group_faces)
+        if touches >= 2:
+            emit(FeatureKind.DRAWING, idxs, {})
+        elif touches == 1 and loops == 1:
+            emit(FeatureKind.EMBOSS, idxs, {})
+        else:
+            warnings.append(
+                f"faces {idxs}: non-planar shell unclassified "
+                f"(touches {touches} planes, {loops} boundary loops)"
+            )
     return features, warnings

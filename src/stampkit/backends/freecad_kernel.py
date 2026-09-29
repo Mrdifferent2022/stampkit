@@ -86,7 +86,14 @@ class FreeCadKernel:
 
     def has_closed_circle_edge(self, face: object) -> bool:
         """True if the face is bounded by a full closed circle (through-hole wall)."""
-        return any(isinstance(e.Curve, Part.Circle) and e.isClosed() for e in face.Edges)
+        for edge in face.Edges:
+            try:
+                curve = edge.Curve
+            except (TypeError, RuntimeError):
+                continue  # exotic intersection curves have no queryable type
+            if isinstance(curve, Part.Circle) and edge.isClosed():
+                return True
+        return False
 
     # -- measurements ---------------------------------------------------------
 
@@ -107,22 +114,112 @@ class FreeCadKernel:
         per_edge = max(2, max_points // max(1, len(edges)))
         points: list[Point3] = []
         for edge in edges:
-            pts = edge.discretize(Number=per_edge)
+            try:
+                pts = edge.discretize(Number=per_edge)
+            except (TypeError, RuntimeError):
+                first, last = edge.FirstParameter, edge.LastParameter
+                step = (last - first) / (per_edge - 1)
+                pts = [edge.value(first + i * step) for i in range(per_edge)]
             points.extend(_v3(p) for p in pts)
         return points
 
     def discretize(self, curve: object, tol_mm: float) -> Polyline:
-        pts = curve.discretize(Deflection=tol_mm)
+        try:
+            pts = curve.discretize(Deflection=tol_mm)
+        except (TypeError, RuntimeError):
+            # boolean-operation intersection curves reject Deflection-based
+            # discretization; fall back to uniform parameter sampling
+            n = max(32, int(curve.Length / max(tol_mm * 4, 0.05)))
+            first, last = curve.FirstParameter, curve.LastParameter
+            step = (last - first) / n
+            pts = [curve.value(first + i * step) for i in range(n + 1)]
         return Polyline(points=tuple(_v3(p) for p in pts), closed=curve.isClosed())
 
     def is_closed(self, wire: object) -> bool:
         return bool(wire.isClosed())
 
     def nonlinear_edges(self, face: object) -> list[object]:
-        return [e for e in face.Edges if not isinstance(e.Curve, Part.Line)]
+        result = []
+        for edge in face.Edges:
+            try:
+                is_line = isinstance(edge.Curve, Part.Line)
+            except (TypeError, RuntimeError):
+                is_line = False
+            if not is_line:
+                result.append(edge)
+        return result
 
     def edge_length(self, edge: object) -> float:
         return float(edge.Length)
+
+    def shared_edges(self, a: object, b: object) -> list[object]:
+        hashes = {e.hashCode() for e in b.Edges}
+        return [e for e in a.Edges if e.hashCode() in hashes]
+
+    def edge_endpoints(self, edge: object) -> tuple[Point3, Point3]:
+        verts = edge.Vertexes
+        return _v3(verts[0].Point), _v3(verts[-1].Point)
+
+    def group_connected_faces(self, faces: list[object]) -> list[list[int]]:
+        parent = list(range(len(faces)))
+
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(x: int, y: int) -> None:
+            parent[find(x)] = find(y)
+
+        edge_owner: dict[int, int] = {}
+        for idx, face in enumerate(faces):
+            for edge in face.Edges:
+                key = edge.hashCode()
+                if key in edge_owner:
+                    union(idx, edge_owner[key])
+                else:
+                    edge_owner[key] = idx
+        groups: dict[int, list[int]] = {}
+        for idx in range(len(faces)):
+            groups.setdefault(find(idx), []).append(idx)
+        return list(groups.values())
+
+    def boundary_loop_count(self, faces: list[object]) -> int:
+        from collections import defaultdict
+
+        use_count: dict[int, int] = defaultdict(int)
+        for face in faces:
+            for edge in face.Edges:
+                use_count[edge.hashCode()] += 1
+        # free edges: used exactly once within the group
+        vertex_edges: dict[int, list[int]] = defaultdict(list)
+        free_ids: list[int] = []
+        for face in faces:
+            for edge in face.Edges:
+                key = edge.hashCode()
+                if use_count[key] == 1:
+                    free_ids.append(key)
+                    for vertex in edge.Vertexes:
+                        vertex_edges[vertex.hashCode()].append(key)
+        # connected components of the free-edge graph = boundary loops
+        seen: set[int] = set()
+        loops = 0
+        for start in free_ids:
+            if start in seen:
+                continue
+            loops += 1
+            stack = [start]
+            seen.add(start)
+            while stack:
+                edge_key = stack.pop()
+                for edge_ids in vertex_edges.values():
+                    if edge_key in edge_ids:
+                        for other in edge_ids:
+                            if other not in seen:
+                                seen.add(other)
+                                stack.append(other)
+        return loops
 
     # -- construction / intersection -------------------------------------------
     # Phase 2 (notch/projection/relief-cut and shell classification).

@@ -5,10 +5,13 @@
 - min_dist_to_edge_mm: wire-to-outer-wire distance on the host sheet face;
 - pairwise edge_dist_mm@<other_id>: precomputed for same-face pairs and for
   slot-to-bend pairs (used by pairwise rules);
-- bend min_dist_to_edge_mm: bend-face to nearest blank-edge face.
+- bend min_dist_to_edge_mm: shortest flange length (sheet-face extent
+  perpendicular to the tangent line).
 """
 
 from __future__ import annotations
+
+import math
 
 from stampkit.extraction.kernel import GeometryKernel, ShapeRef
 from stampkit.extraction.planar import PlanarHit
@@ -57,20 +60,54 @@ def compute_planar_params(
             fb.params[f"edge_dist_mm@{fa.id}"] = d
 
 
+def _is_straight(kernel: GeometryKernel, edge: ShapeRef) -> bool:
+    p1, p2 = kernel.edge_endpoints(edge)
+    chord = p1.distance_to(p2)
+    return abs(kernel.edge_length(edge) - chord) <= max(1e-4, 1e-4 * chord)
+
+
+def _dist_to_line(p: Point3, a: Point3, b: Point3) -> float:
+    """Distance from point p to the infinite line through a and b."""
+    dx, dy, dz = b.x - a.x, b.y - a.y, b.z - a.z
+    norm = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if norm < 1e-12:
+        return p.distance_to(a)
+    wx, wy, wz = p.x - a.x, p.y - a.y, p.z - a.z
+    cx, cy, cz = wy * dz - wz * dy, wz * dx - wx * dz, wx * dy - wy * dx
+    return math.sqrt(cx * cx + cy * cy + cz * cz) / norm
+
+
 def compute_bend_params(
     kernel: GeometryKernel,
     bends: list[tuple[Feature, list[int]]],
     face_by_idx: dict[int, ShapeRef],
-    blank_edges: list[tuple[int, ShapeRef]],
+    sheet_faces: list[tuple[int, ShapeRef]],
     slots: list[PlanarHit],
+    settings: KernelSettings,
 ) -> None:
     for feature, face_indices in bends:
         bend_faces = [face_by_idx[i] for i in face_indices]
-        if blank_edges:
-            feature.params["min_dist_to_edge_mm"] = min(
-                kernel.dist(bf, ef) for bf in bend_faces for _ei, ef in blank_edges
-            )
-    # slot -> bend distances (parallel-ness refinement lands in Phase 2)
+        # min_dist_to_edge_mm = shortest flange length: for each sheet face
+        # sharing a straight tangent edge with the bend, the extent of that
+        # face perpendicular to the tangent line. Measuring to blank-edge
+        # faces instead would unfairly flag legitimate relief-cuts.
+        flange_lengths: list[float] = []
+        for _si, sface in sheet_faces:
+            tangents = [
+                e
+                for bf in bend_faces
+                for e in kernel.shared_edges(sface, bf)
+                if _is_straight(kernel, e)
+            ]
+            if not tangents:
+                continue
+            p1, p2 = kernel.edge_endpoints(max(tangents, key=kernel.edge_length))
+            outer, _ = kernel.wires(sface)
+            pts = kernel.control_points(outer, settings.control_point_samples)
+            flange_lengths.append(max(_dist_to_line(p, p1, p2) for p in pts))
+        if flange_lengths:
+            feature.params["min_dist_to_edge_mm"] = min(flange_lengths)
+    # slot -> bend distances
     for slot, wire, _face_idx in slots:
         for bend, face_indices in bends:
             d = min(kernel.dist(wire, face_by_idx[i]) for i in face_indices)

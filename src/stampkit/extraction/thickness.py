@@ -32,6 +32,9 @@ class ClassifiedFaces:
     non_planar: list[tuple[int, ShapeRef]] = field(default_factory=list)
     ignored: list[tuple[int, ShapeRef]] = field(default_factory=list)
 
+    def all_planar(self) -> list[tuple[int, ShapeRef]]:
+        return self.sheet_faces + self.blank_edges + self.ignored
+
 
 def in_plane_extents(corners: list[Point3], frame: PlaneFrame) -> tuple[float, float]:
     """Project bbox corners onto the face plane; return (u_extent, v_extent)."""
@@ -91,25 +94,33 @@ def dedupe_sheet_faces(
     thickness_mm: float,
     *,
     offset_tol: float = 0.3,
-) -> list[tuple[int, ShapeRef]]:
+) -> list[tuple[int, ShapeRef, bool]]:
     """Collapse opposing pairs of sheet faces (top/bottom of the same wall).
 
     Without thickness removal, every punched feature appears as inner wires on
     BOTH sides of the wall. Two faces form a pair when their planes are
     parallel, offset by ~t, and their in-plane footprints overlap.
+
+    Returns (index, face, paired) triples: one representative per pair
+    (paired=True) and unpaired faces as-is (paired=False, e.g. profile
+    faces of extruded brackets).
     """
     frames = [(idx, face, kernel.plane_frame(face)) for idx, face in sheet_faces]
     paired: set[int] = set()
-    keep: list[tuple[int, ShapeRef]] = []
+    partners: set[int] = set()
+    keep: list[tuple[int, ShapeRef, bool]] = []
     for i, (idx_a, face_a, fa) in enumerate(frames):
         if idx_a in paired:
             continue
-        keep.append((idx_a, face_a))
+        is_paired = False
         for idx_b, face_b, fb in frames[i + 1 :]:
             if idx_b in paired:
                 continue
             if _is_opposing_pair(kernel, face_a, fa, face_b, fb, thickness_mm, offset_tol):
                 paired.add(idx_b)
+                partners.add(idx_b)
+                is_paired = True
+        keep.append((idx_a, face_a, is_paired))
     return keep
 
 
@@ -145,11 +156,22 @@ def _is_opposing_pair(
     return True
 
 
-def _frame_axes(frame: PlaneFrame) -> tuple[Vector3, Vector3]:
+def frame_axes(frame: PlaneFrame) -> tuple[Vector3, Vector3]:
+    """In-plane unit axes (u, v) of a planar frame."""
     n = frame.normal
     ref = Vector3(1.0, 0.0, 0.0) if abs(n.x) < 0.9 else Vector3(0.0, 1.0, 0.0)
     u = _normalize(_cross(n, ref))
     return u, _cross(n, u)
+
+
+def project_to_plane(p: Point3, frame: PlaneFrame, u: Vector3, v: Vector3) -> tuple[float, float]:
+    """Project a 3D point onto the plane's (u, v) coordinates."""
+    dx, dy, dz = p.x - frame.origin.x, p.y - frame.origin.y, p.z - frame.origin.z
+    return dx * u.x + dy * u.y + dz * u.z, dx * v.x + dy * v.y + dz * v.z
+
+
+def _frame_axes(frame: PlaneFrame) -> tuple[Vector3, Vector3]:
+    return frame_axes(frame)
 
 
 def _project(points: list[Point3], origin: Point3, axis: Vector3) -> list[float]:
