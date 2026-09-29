@@ -56,6 +56,9 @@ class FreeCadKernel:
         bb = face.BoundBox
         return BBox(bb.XMin, bb.YMin, bb.ZMin, bb.XMax, bb.YMax, bb.ZMax)
 
+    def face_centroid(self, face: object) -> Point3:
+        return _v3(face.CenterOfMass)
+
     def cylinder_radius(self, face: object) -> float | None:
         """Radius of a cylindrical face, or None if not cylindrical."""
         if isinstance(face.Surface, Part.Cylinder):

@@ -47,6 +47,7 @@ def extract_planar_features(
                 id=f"{kind.value}{counters[kind]}",
                 kind=kind,
                 face_refs=_face_refs(face_idx, partners),
+                anchor=centroid,
                 params={"area_mm2": area},
             )
             hits.append((feature, wire, face_idx))
@@ -82,17 +83,18 @@ def extract_outline_features(
         ):
             kind = FeatureKind.NOTCH if ch.kind == "notch" else FeatureKind.PROJECTION
             counters[kind] = counters.get(kind, 0) + 1
-            feature = Feature(
-                id=f"{kind.value}{counters[kind]}",
-                kind=kind,
-                face_refs=_face_refs(face_idx, partners),
-                params={"width_mm": ch.width_mm, "depth_mm": ch.depth_mm},
-            )
             o = frame.origin
             mouth3d = Point3(
                 o.x + u.x * ch.mouth_mid[0] + v.x * ch.mouth_mid[1],
                 o.y + u.y * ch.mouth_mid[0] + v.y * ch.mouth_mid[1],
                 o.z + u.z * ch.mouth_mid[0] + v.z * ch.mouth_mid[1],
+            )
+            feature = Feature(
+                id=f"{kind.value}{counters[kind]}",
+                kind=kind,
+                face_refs=_face_refs(face_idx, partners),
+                anchor=mouth3d,
+                params={"width_mm": ch.width_mm, "depth_mm": ch.depth_mm},
             )
             results.append((feature, face_idx, mouth3d))
     return results

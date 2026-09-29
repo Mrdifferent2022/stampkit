@@ -84,3 +84,27 @@ def clear_all(document: object) -> None:
         view_obj = getattr(obj, "ViewObject", None)
         if view_obj is not None:
             clear_highlights(view_obj)
+
+
+def select_feature(obj: object, feature: object) -> int:
+    """Natively select a feature's faces in the 3D view; returns the count.
+
+    FreeCAD sub-element names are 1-based ("Face1" == Shape.Faces[0]).
+    """
+    import FreeCADGui as Gui  # type: ignore[import-not-found]
+
+    names = []
+    for ref in feature.face_refs:
+        idx = _face_index(ref)
+        if idx is not None and 0 <= idx < len(obj.Shape.Faces):
+            names.append(f"Face{idx + 1}")
+    Gui.Selection.clearSelection()
+    for name in names:
+        Gui.Selection.addSelection(obj.Document.Name, obj.Name, name)
+    return len(names)
+
+
+def clear_selection() -> None:
+    import FreeCADGui as Gui  # type: ignore[import-not-found]
+
+    Gui.Selection.clearSelection()

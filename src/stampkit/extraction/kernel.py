@@ -86,6 +86,10 @@ class GeometryKernel(Protocol):
     def face_bbox(self, face: ShapeRef) -> BBox:
         ...
 
+    def face_centroid(self, face: ShapeRef) -> Point3:
+        """Centre of mass of a face (feature anchor for visualization)."""
+        ...
+
     # -- measurements --------------------------------------------------------
     def dist(self, a: ShapeRef, b: ShapeRef) -> float:
         """Minimum distance between two shapes."""

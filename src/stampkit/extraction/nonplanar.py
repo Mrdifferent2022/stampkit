@@ -43,6 +43,16 @@ def _coaxial(a1: tuple[Point3, Vector3], a2: tuple[Point3, Vector3]) -> bool:
     return _axis_distance(p1, d1, p2, d2) <= _AXIS_DIST_TOL
 
 
+def _mean_anchor(kernel: GeometryKernel, faces: list[ShapeRef]) -> Point3:
+    centroids = [kernel.face_centroid(f) for f in faces]
+    n = len(centroids)
+    return Point3(
+        sum(c.x for c in centroids) / n,
+        sum(c.y for c in centroids) / n,
+        sum(c.z for c in centroids) / n,
+    )
+
+
 def extract_bends(
     kernel: GeometryKernel,
     non_planar: list[tuple[int, ShapeRef]],
@@ -103,6 +113,7 @@ def extract_bends(
                     id=f"bend{i}",
                     kind=FeatureKind.BEND,
                     face_refs=tuple(f"face:{i}" for i in face_indices),
+                    anchor=_mean_anchor(kernel, [g[1] for g in group]),
                     params={"radius_mm": inner_radius},
                 ),
                 face_indices,
@@ -130,17 +141,20 @@ def classify_shells(
     if not leftover:
         return features, warnings
 
+    face_by_idx = dict(leftover)
     faces = [f for _i, f in leftover]
     groups = kernel.group_connected_faces(faces)
     counters: dict[FeatureKind, int] = {}
 
     def emit(kind: FeatureKind, face_indices: list[int], params: dict[str, float]) -> None:
         counters[kind] = counters.get(kind, 0) + 1
+        group_shapes = [face_by_idx[i] for i in face_indices]
         features.append(
             Feature(
                 id=f"{kind.value}{counters[kind]}",
                 kind=kind,
                 face_refs=tuple(f"face:{i}" for i in sorted(face_indices)),
+                anchor=_mean_anchor(kernel, group_shapes),
                 params=params,
             )
         )

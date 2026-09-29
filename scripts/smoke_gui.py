@@ -81,6 +81,11 @@ def main() -> None:
 
     report = StampKitService().evaluate_shape(obj.Shape, thickness_mm=2.5, material="steel")
     check("evaluation finds the violation", report.summary.to_fix == 1, f"{report.summary}")
+    check(
+        "anchors present",
+        all(f.anchor is not None and len(f.anchor) == 3 for f in report.features),
+        f"{[(f.id, f.anchor is not None) for f in report.features]}",
+    )
 
     before = list(obj.ViewObject.DiffuseColor)
     n = highlight.apply_highlights(obj.ViewObject, report, len(obj.Shape.Faces))
@@ -111,6 +116,38 @@ def main() -> None:
         red_px_after < max(50, red_px * 0.05),
         f"red_px={red_px_after} (was {red_px})",
     )
+
+    # 5. Feature markers (3D labels) and click-to-select.
+    from stampkit.freecad_gui import markers
+
+    all_markers = markers.build_markers(obj.Shape, report)
+    shown = markers.show_markers(doc.Name, view, all_markers)
+    check(
+        "markers inserted",
+        shown == len(report.features) and markers.marker_count(doc.Name) == shown,
+        f"{shown}/{len(report.features)}",
+    )
+
+    fix_id = next(f.feature_id for f in report.findings if f.verdict == "fix")
+    feat = next(f for f in report.features if f.id == fix_id)
+    nsel = highlight.select_feature(obj, feat)
+    check(
+        "feature selection",
+        nsel == len(feat.face_refs) and len(Gui.Selection.getSelectionEx()) > 0,
+        f"faces={nsel}",
+    )
+    sub_names = [
+        el for s in Gui.Selection.getSelectionEx(doc.Name) for el in s.SubElementNames
+    ]
+    check(
+        "selection sub-elements (1-based)",
+        len(sub_names) == len(feat.face_refs),
+        f"{sub_names}",
+    )
+
+    markers.clear_markers(doc.Name)
+    check("markers cleared", markers.marker_count(doc.Name) == 0)
+    highlight.clear_selection()
 
     App.closeDocument(doc.Name)
 

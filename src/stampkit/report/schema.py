@@ -22,6 +22,8 @@ class FeatureRecord(BaseModel):
     kind: str
     params: dict[str, float] = Field(default_factory=dict)
     face_refs: list[str] = Field(default_factory=list)
+    #: 3D anchor [x, y, z] for visualization (labels/highlights), if known.
+    anchor: list[float] | None = None
 
 
 class FindingRecord(BaseModel):
@@ -80,7 +82,11 @@ def build_report(
         ruleset=ctx.ruleset,
         features=[
             FeatureRecord(
-                id=f.id, kind=f.kind.value, params=dict(f.params), face_refs=list(f.face_refs)
+                id=f.id,
+                kind=f.kind.value,
+                params=dict(f.params),
+                face_refs=list(f.face_refs),
+                anchor=[f.anchor.x, f.anchor.y, f.anchor.z] if f.anchor else None,
             )
             for f in extraction.features
         ],

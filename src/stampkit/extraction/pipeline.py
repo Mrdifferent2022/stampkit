@@ -114,6 +114,7 @@ class ExtractionPipeline:
                             face_refs=feature.face_refs,
                             outline=feature.outline,
                             plane=feature.plane,
+                            anchor=feature.anchor,
                             params={
                                 "width_mm": feature.params.get("width_mm", 0.0),
                                 "length_mm": feature.params.get("depth_mm", 0.0),

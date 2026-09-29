@@ -10,7 +10,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 
-from stampkit.model.geometry import PlaneFrame, Polyline
+from stampkit.model.geometry import PlaneFrame, Point3, Polyline
 
 
 class FeatureKind(enum.StrEnum):
@@ -58,6 +58,9 @@ class Feature:
     face_refs: tuple[str, ...] = ()
     outline: Polyline | None = None
     plane: PlaneFrame | None = None
+    #: 3D anchor point for visualization (hole centre, notch mouth, bend
+    #: middle, ...); UIs and agents place labels/highlights here.
+    anchor: Point3 | None = None
     params: dict[str, float] = field(default_factory=dict)
 
     def param(self, name: str) -> float | None:
